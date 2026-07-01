@@ -240,20 +240,26 @@ async function loadData() {
     S.filtered = [];
     return;
   }
-  const extra   = JSON.parse(localStorage.getItem('rmu_extra_profs')   || '[]');
-  const extraRv = JSON.parse(localStorage.getItem('rmu_extra_reviews') || '{}');
+
+  const useSupabase = Boolean(appSupabase);
+  const extra   = useSupabase ? [] : JSON.parse(localStorage.getItem('rmu_extra_profs')   || '[]');
+  const extraRv = useSupabase ? {} : JSON.parse(localStorage.getItem('rmu_extra_reviews') || '{}');
+
   S.professors = SEED_PROFESSORS.map(p => {
-    const added = extraRv[p.id] || [];
-    const all = [...p.reviews, ...added];
-    return { ...p, reviews: all, reviewCount: all.length, badges: computeBadges({...p,reviews:all}) };
+    const reviews = useSupabase ? [] : [...p.reviews, ...(extraRv[p.id] || [])];
+    return { ...p, reviews, reviewCount: reviews.length, badges: computeBadges({...p,reviews:reviews}) };
   });
-  extra.forEach(p => S.professors.push(p));
+
+  if (!useSupabase) {
+    extra.forEach(p => S.professors.push(p));
+  }
+
   S.recentlyViewed = JSON.parse(localStorage.getItem('rmu_recent') || '[]');
   S.filtered = [...S.professors];
   const t = localStorage.getItem('rmu_theme') || 'light';
   document.documentElement.setAttribute('data-theme', t);
 
-  if (appSupabase) {
+  if (useSupabase) {
     await syncSupabaseReviews();
   }
 }
