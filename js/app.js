@@ -287,7 +287,7 @@ function buildUser(sbUser) {
     uni: sbUser.user_metadata?.uni || '',
     dept: sbUser.user_metadata?.dept || '',
     role: 'student',
-    verified: true,
+    verified: Boolean(sbUser.email_confirmed_at),
     avatar: (sbUser.user_metadata?.username || sbUser.email || '?')[0].toUpperCase(),
     reviewIds: [],
     sbId: sbUser.id
@@ -364,10 +364,33 @@ async function doRegister() {
   if (appSupabase) {
     const { data, error } = await appSupabase.auth.signUp({
       email, password: pass,
-      options: { data: { username, uni: uniName, dept } }
+      options: {
+        data: { username, uni: uniName, dept },
+        emailRedirectTo: `${window.location.origin}${window.location.pathname}`
+      }
     });
     if (error) return showEl(errEl, error.message,'err');
-    showEl(errEl,'✅ Εγγραφή επιτυχής! Έλεγξε το email σου για επιβεβαίωση.','success');
+
+    if (data?.session) {
+      S.user = buildUser(data.user);
+      loginUser(S.user, true);
+      return;
+    }
+
+    const users = getUsers();
+    const existing = users.find(u => u.email === email);
+    const localUser = existing || {
+      username, email, uni: uniName, dept,
+      password: hashPass(pass), role:'student',
+      verified: false, avatar: username[0].toUpperCase(),
+      reviewIds: [], createdAt: new Date().toISOString()
+    };
+
+    if (!existing) users.push(localUser);
+    saveUsers(users);
+    sessionStorage.setItem('rmu_session', username);
+    loginUser(localUser, true);
+    showEl(errEl,'✅ Η εγγραφή δημιουργήθηκε. Έλεγξε το email σου για επιβεβαίωση και αν δεν φτάσει, ενεργοποίησε το email provider στο Supabase project settings.','success');
     return;
   }
 
