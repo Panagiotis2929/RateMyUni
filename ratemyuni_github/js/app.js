@@ -6,12 +6,10 @@
 ═══════════════════════════════════════════════════════ */
 
 /* ── Supabase Config ──────────────────────────────────────
-   ΒΑΛΕ ΤΑ CREDENTIALS ΣΟΥ ΜΟΝΟ ΕΔΩ — μην τα προσθέσεις
-   αλλού γιατί θα βγει "already declared" error.
-   Τα βρίσκεις: supabase.com → project → Settings → API
+
 ────────────────────────────────────────────────────── */
-const SUPABASE_URL = 'ΒΑΛΕ_ΕΔΩ_ΤΟ_PROJECT_URL';
-const SUPABASE_KEY = 'ΒΑΛΕ_ΕΔΩ_ΤΟ_ANON_KEY';
+const SUPABASE_URL = 'https://rncttqwxsejvlymojhgf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_nd83uLlccMB2dkEDvMmtAw_Eb_MytFt';
 let supabase = null;
 
 function initSupabase() {
