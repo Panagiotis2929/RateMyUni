@@ -34,7 +34,8 @@ async function syncSupabaseReviews() {
   if (!rows.length) return;
 
   rows.forEach(row => {
-    const prof = S.professors.find(p => String(p.id) === String(row.professor_id));
+    const professorId = row.professor_id?.toString().trim();
+    const prof = S.professors.find(p => p.id?.toString().trim().toLowerCase() === professorId?.toLowerCase());
     if (!prof) return;
 
     const normalized = {
@@ -202,9 +203,9 @@ const S = {
 
 /* ── BOOT ── */
 // Start immediately when DOM is ready, don't wait for all resources
-function bootApp() {
+async function bootApp() {
   initSupabase();
-  loadData();
+  await loadData();
   // Shorter splash: 1.2s (faster feel on mobile)
   setTimeout(() => {
     const splash = document.getElementById('splash');
@@ -1098,10 +1099,12 @@ async function submitReview(){
       rev.professorId = prof.id;
     }
     prof.reviews.unshift(rev); recalc(prof);
-    const er=JSON.parse(localStorage.getItem('rmu_extra_reviews')||'{}');
-    if(!er[prof.id]) er[prof.id]=[];
-    er[prof.id].unshift(rev);
-    localStorage.setItem('rmu_extra_reviews',JSON.stringify(er));
+    if (!appSupabase) {
+      const er=JSON.parse(localStorage.getItem('rmu_extra_reviews')||'{}');
+      if(!er[prof.id]) er[prof.id]=[];
+      er[prof.id].unshift(rev);
+      localStorage.setItem('rmu_extra_reviews',JSON.stringify(er));
+    }
   } else {
     const np={id:'p'+Date.now(),name,dept,uni:S.user?.uni||'Άλλο',
       title:'',emoji:'👤',courses:course?[course]:[],
