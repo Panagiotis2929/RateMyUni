@@ -491,6 +491,7 @@ function initApp() {
   window.addEventListener('scroll',()=>document.getElementById('navbar').classList.toggle('scrolled',window.scrollY>20));
   document.addEventListener('click',e=>{
     if(!e.target.closest('.search-bar')) closeDrop();
+    if(!e.target.closest('#mobileSearchInput') && !e.target.closest('#mobileSearchDrop')) document.getElementById('mobileSearchDrop')?.classList.remove('open');
     if(!e.target.closest('.review-search')) document.getElementById('rvSearchDrop')?.classList.remove('open');
     if(!e.target.closest('.user-menu-wrap')) closeUserMenu();
     if(!e.target.closest('.compare-picker')) { closeCmpDrop(1); closeCmpDrop(2); }
@@ -765,11 +766,11 @@ function addToCompare(profId){
 function cmpSearch(slot, val){
   clearTimeout(S.cmpTimers[slot-1]);
   const drop=document.getElementById(`cmpDrop${slot}`);
-  if(val.trim().length<2){ drop.classList.add('hidden'); return; }
+  if(val.trim().length<1){ drop.classList.add('hidden'); return; }
   S.cmpTimers[slot-1]=setTimeout(()=>{
+    const nq=norm(val);
     const hits=S.professors.filter(p=>
-      p.name.toLowerCase().includes(val.toLowerCase())||
-      p.dept.toLowerCase().includes(val.toLowerCase())
+      norm(p.name).includes(nq)||norm(p.dept).includes(nq)||norm(p.uni).includes(nq)
     ).slice(0,6);
     if(!hits.length){ drop.classList.add('hidden'); return; }
     drop.innerHTML=hits.map(p=>`
@@ -1202,14 +1203,15 @@ function recalc(p){
 }
 
 function handleReviewSearch(val){
-  const q=val.trim().toLowerCase();
+  const q=val.trim();
+  const nq=norm(q);
   const drop=document.getElementById('rvSearchDrop');
   const profIdField=document.getElementById('rv-profId');
   if(profIdField) profIdField.value = '';
   if(!drop) return;
-  if(q.length<2){ drop.classList.remove('open'); drop.innerHTML=''; return; }
+  if(q.length<1){ drop.classList.remove('open'); drop.innerHTML=''; return; }
   const hits=getAllowedReviewProfessors().filter(p=>
-    p.name.toLowerCase().includes(q) || p.dept.toLowerCase().includes(q) || p.uni.toLowerCase().includes(q)
+    norm(p.name).includes(nq) || norm(p.dept).includes(nq) || norm(p.uni).includes(nq)
   ).slice(0,6);
   if(!hits.length){
     drop.innerHTML=`<div class="sri empty">Μόνο καθηγητές από το τμήμα σου εμφανίζονται εδώ.</div>`;
@@ -1251,18 +1253,40 @@ function computeBadges(p){
 }
 
 /* ── SEARCH ── */
-function handleSearch(val){
+function norm(s){return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+
+function searchProfessors(q){
+  const nq=norm(q);
+  const scored=[];
+  for(const p of S.professors){
+    const name=norm(p.name), dept=norm(p.dept), uni=norm(p.uni);
+    const courses=p.courses.map(norm);
+    let score=0;
+    if(name.startsWith(nq)) score=100;
+    else if(name.split(' ').some(w=>w.startsWith(nq))) score=90;
+    else if(name.includes(nq)) score=75;
+    else if(dept.startsWith(nq)||uni.startsWith(nq)) score=55;
+    else if(dept.includes(nq)||uni.includes(nq)) score=40;
+    else if(courses.some(c=>c.includes(nq))) score=25;
+    if(score) scored.push({p,score});
+  }
+  scored.sort((a,b)=> b.score-a.score || b.p.overall-a.p.overall || a.p.name.localeCompare(b.p.name,'el'));
+  return scored.map(x=>x.p);
+}
+
+function handleSearch(val, dropId){
   clearTimeout(S.searchTimer);
-  const q=val.trim().toLowerCase();
-  const drop=document.getElementById('searchDrop');
-  if(q.length<2){drop.classList.remove('open');return;}
+  const drop=document.getElementById(dropId||'searchDrop');
+  if(!drop) return;
+  const q=val.trim();
+  if(q.length<1){drop.classList.remove('open');drop.innerHTML='';return;}
   S.searchTimer=setTimeout(()=>{
-    const hits=S.professors.filter(p=>
-      p.name.toLowerCase().includes(q)||p.dept.toLowerCase().includes(q)||
-      p.uni.toLowerCase().includes(q)||p.courses.some(c=>c.toLowerCase().includes(q))
-    ).slice(0,6);
-    if(!hits.length){drop.classList.remove('open');return;}
-    drop.innerHTML=hits.map(p=>`<div class="sri" onclick="navigate('professor','${p.id}');clearSearch()">
+    const hits=searchProfessors(q).slice(0,6);
+    if(!hits.length){
+      drop.innerHTML=`<div class="sri empty">Δεν βρέθηκαν καθηγητές</div>`;
+      drop.classList.add('open');return;
+    }
+    drop.innerHTML=hits.map(p=>`<div class="sri" onclick="openSearchResult('${p.id}')">
       <div class="sri-av">${p.emoji}</div>
       <div class="sri-info">
         <div class="sri-name">${hl(p.name,q)}</div>
@@ -1271,12 +1295,20 @@ function handleSearch(val){
       <div class="sri-r">★ ${p.overall.toFixed(1)}</div>
     </div>`).join('');
     drop.classList.add('open');
-  },200);
+  },120);
 }
 
-function hl(t,q){const i=t.toLowerCase().indexOf(q);if(i<0)return t;
+function openSearchResult(id){ navigate('professor',id); clearSearch(); }
+
+function hl(t,q){const i=t.toLowerCase().indexOf(q.toLowerCase());if(i<0||!q)return t;
   return t.slice(0,i)+`<strong style="color:var(--primary)">${t.slice(i,i+q.length)}</strong>`+t.slice(i+q.length);}
-function clearSearch(){document.getElementById('searchInput').value='';document.getElementById('searchDrop').classList.remove('open');}
+function clearSearch(){
+  const si=document.getElementById('searchInput'); if(si) si.value='';
+  document.getElementById('searchDrop')?.classList.remove('open');
+  const mi=document.getElementById('mobileSearchInput'); if(mi) mi.value='';
+  const md=document.getElementById('mobileSearchDrop'); if(md){md.classList.remove('open');md.innerHTML='';}
+  closeMobileMenu();
+}
 function closeDrop(){document.getElementById('searchDrop')?.classList.remove('open');}
 
 /* ── SHARE ── */

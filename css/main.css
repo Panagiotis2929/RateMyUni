@@ -259,6 +259,7 @@ input,select,textarea{font-family:var(--f-body)}
 .mobile-search{width:calc(100% - 48px);margin:12px 24px;padding:10px 14px;
   background:var(--bg-sub);border:1.5px solid var(--border);border-radius:var(--r-md);
   font-size:14px;color:var(--t1);outline:none;display:block}
+.mobile-menu .mobile-search-drop{position:static;margin:0 24px 12px;max-height:280px}
 
 /* ── Main ── */
 .main{padding-top:64px}

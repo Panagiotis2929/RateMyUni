@@ -183,7 +183,8 @@
       </div>
     </div>
     <div class="mobile-menu hidden" id="mobileMenu">
-      <input type="search" placeholder="Αναζήτηση..." class="mobile-search" oninput="handleSearch(this.value)"/>
+      <input type="search" id="mobileSearchInput" placeholder="Αναζήτηση..." class="mobile-search" oninput="handleSearch(this.value,'mobileSearchDrop')" autocomplete="off"/>
+      <div class="search-drop mobile-search-drop" id="mobileSearchDrop"></div>
       <a onclick="navigate('home');     closeMobileMenu()">🏠 Αρχική</a>
       <a onclick="navigate('rankings'); closeMobileMenu()">🏆 Rankings</a>
       <a onclick="navigate('compare');  closeMobileMenu()">⚖️ Σύγκριση 1v1</a>
