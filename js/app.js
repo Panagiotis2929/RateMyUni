@@ -1,6 +1,6 @@
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY;
-let appSupabase = null;
+import { config } from './config.js';
+const SUPABASE_URL = config.SUPABASE_URL;
+const SUPABASE_KEY = config.SUPABASE_KEY;
 
 function initSupabase() {
   const url = (typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.startsWith('ΒΑΛΕ'))
