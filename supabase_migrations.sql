@@ -77,51 +77,66 @@ CREATE INDEX IF NOT EXISTS idx_helpful_votes_review ON public.helpful_votes(revi
 CREATE INDEX IF NOT EXISTS idx_helpful_votes_user   ON public.helpful_votes(user_id);
 
 -- ────────────────────────────────────────
--- 4. RLS POLICIES
+-- 4. RLS POLICIES (idempotent)
 -- ────────────────────────────────────────
 
 -- PROFILES
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Public profiles visible to all" ON public.profiles;
 CREATE POLICY "Public profiles visible to all"
-  ON public.profiles FOR SELECT USING (true);
+  ON public.profiles FOR SELECT
+  USING (true);
 
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 CREATE POLICY "Users can insert own profile"
   ON public.profiles FOR INSERT
   WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile"
   ON public.profiles FOR UPDATE
-  USING (auth.uid() = id);
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
 -- REVIEWS
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Reviews visible to all" ON public.reviews;
 CREATE POLICY "Reviews visible to all"
-  ON public.reviews FOR SELECT USING (true);
+  ON public.reviews FOR SELECT
+  USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can insert reviews" ON public.reviews;
 CREATE POLICY "Authenticated users can insert reviews"
   ON public.reviews FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own reviews" ON public.reviews;
 CREATE POLICY "Users can update own reviews"
   ON public.reviews FOR UPDATE
-  USING (auth.uid() = user_id);
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 -- HELPFUL VOTES
 ALTER TABLE public.helpful_votes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Votes visible to all" ON public.helpful_votes;
 CREATE POLICY "Votes visible to all"
-  ON public.helpful_votes FOR SELECT USING (true);
+  ON public.helpful_votes FOR SELECT
+  USING (true);
 
+DROP POLICY IF EXISTS "Auth users can vote" ON public.helpful_votes;
 CREATE POLICY "Auth users can vote"
   ON public.helpful_votes FOR INSERT
   WITH CHECK (
-    auth.uid() = user_id AND
-    -- Cannot vote on own review
-    (SELECT user_id FROM public.reviews WHERE id = review_id) != auth.uid()
+    auth.uid() = user_id
+    AND (
+      SELECT r.user_id
+      FROM public.reviews r
+      WHERE r.id = review_id
+    ) IS DISTINCT FROM auth.uid()
   );
-
 -- ────────────────────────────────────────
 -- 5. FUNCTIONS & TRIGGERS
 -- ────────────────────────────────────────
