@@ -24,55 +24,124 @@ function initSupabase() {
 
 async function syncSupabaseReviews() {
   if (!appSupabase) return;
-  const { data, error } = await appSupabase.from('reviews').select('*').order('created_at', { ascending: false });
+
+  const { data, error } = await appSupabase
+    .from('reviews')
+    .select('*')
+    .order('created_at', { ascending: false });
+
   if (error) {
     console.warn('[Supabase] Could not load reviews:', error);
+
+    // Important: if loading fails, do NOT use fake data.
+    // Keep every professor at zero reviews.
+    S.professors.forEach(prof => {
+      prof.reviews = [];
+      recalc(prof);
+    });
+
     return;
   }
 
-  const rows = data || [];
-  if (!rows.length) {
-    // Supabase has no reviews yet: use seed demo reviews as a fallback so totals are not zero.
-    S.professors.forEach(prof => {
-      const seedProf = SEED_PROFESSORS.find(p => p.id === prof.id);
-      prof.reviews = seedProf ? [...(seedProf.reviews || [])] : [];
-      recalc(prof);
-    });
-  } else {
-    // Clear existing reviews so sync remains idempotent.
-    S.professors.forEach(prof => { prof.reviews = []; });
-    rows.forEach(row => {
-      const professorId = row.professor_id?.toString().trim();
-      const prof = S.professors.find(p => p.id?.toString().trim().toLowerCase() === professorId?.toLowerCase());
-      if (!prof) return;
+  const rows = Array.isArray(data) ? data : [];
 
-      const normalized = {
-        id: row.id,
-        uid: row.username || (row.user_id ? `sb:${row.user_id}` : 'anon'),
-        author: row.username || 'Ανώνυμος Φοιτητής',
-        date: row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
-        rating: Number(row.rating) || 0,
-        course: row.course || '',
-        sem: row.semester || '',
-        text: row.review_text || '',
-        chips: Array.isArray(row.chips) ? row.chips : [],
-        passed: row.passed,
-        helpfulUp: row.helpful_up || 0,
-        helpfulDown: row.helpful_down || 0,
-        fromSupabase: true,
-        professorId: row.professor_id
-      };
+  // Always start from zero and rebuild exclusively
+  // from the Supabase rows.
+  S.professors.forEach(prof => {
+    prof.reviews = [];
+  });
 
-      const exists = prof.reviews.some(r => r.id === normalized.id || (r.fromSupabase && r.text === normalized.text && r.date === normalized.date));
-      if (!exists) {
-        prof.reviews.unshift(normalized);
-      }
-    });
-    S.professors.forEach(recalc);
-  }
+  rows.forEach(row => {
+    const professorId = row.professor_id
+      ?.toString()
+      .trim()
+      .toLowerCase();
+
+    if (!professorId) return;
+
+    const prof = S.professors.find(
+      p => p.id?.toString().trim().toLowerCase() === professorId
+    );
+
+    if (!prof) return;
+
+    // Ignore any old seed/demo rows that might still exist
+    // in Supabase.
+    if (row.username === 'seed' || row.user_id === 'seed') {
+      return;
+    }
+
+    const rating = Number(row.rating);
+
+    // Ignore malformed ratings.
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+      return;
+    }
+
+    const normalized = {
+      id: row.id,
+
+      uid: row.user_id
+        ? `sb:${row.user_id}`
+        : (row.username || 'anon'),
+
+      author: row.username || 'Ανώνυμος Φοιτητής',
+
+      date: row.created_at
+        ? row.created_at.slice(0, 10)
+        : new Date().toISOString().slice(0, 10),
+
+      rating,
+
+      difficulty: Number.isFinite(Number(row.difficulty))
+        ? Number(row.difficulty)
+        : null,
+
+      organization: Number.isFinite(Number(row.organization))
+        ? Number(row.organization)
+        : null,
+
+      inspiration: Number.isFinite(Number(row.inspiration))
+        ? Number(row.inspiration)
+        : null,
+
+      course: row.course || '',
+      sem: row.semester || '',
+      text: row.review_text || '',
+
+      chips: Array.isArray(row.chips)
+        ? row.chips
+        : [],
+
+      passed: row.passed ?? null,
+
+      helpfulUp: Number(row.helpful_up) || 0,
+      helpfulDown: Number(row.helpful_down) || 0,
+
+      fromSupabase: true,
+      professorId: row.professor_id
+    };
+
+    // Avoid duplicate rows.
+    const exists = prof.reviews.some(
+      r => String(r.id) === String(normalized.id)
+    );
+
+    if (!exists) {
+      prof.reviews.push(normalized);
+    }
+  });
+
+  // ALL statistics are now rebuilt from genuine reviews.
+  S.professors.forEach(recalc);
 
   S.filtered = [...S.professors];
-  if (document.getElementById('mainApp') && !document.getElementById('mainApp').classList.contains('hidden')) {
+
+  // Refresh UI
+  if (
+    document.getElementById('mainApp') &&
+    !document.getElementById('mainApp').classList.contains('hidden')
+  ) {
     renderPOTM();
     renderTrending();
     applyFilters();
@@ -80,9 +149,14 @@ async function syncSupabaseReviews() {
     renderRecent();
     renderMyReviews();
     renderProfile();
-    if (S.currentProf) renderProfDetail(S.currentProf);
+
+    if (S.currentProf) {
+      renderProfDetail(S.currentProf);
+    }
   }
 }
+
+
 
 async function syncSupabaseProfile() {
   if (!appSupabase || !S.user || S.user.role === 'guest') return;
@@ -242,8 +316,9 @@ setTimeout(() => {
   }
 }, 5000);
 
+
 async function loadData() {
-  // Safety check: if data.js failed to load
+  // Safety check
   if (typeof SEED_PROFESSORS === 'undefined' || !SEED_PROFESSORS) {
     console.error('data.js not loaded!');
     S.professors = [];
@@ -252,23 +327,49 @@ async function loadData() {
   }
 
   const useSupabase = Boolean(appSupabase);
-  const extra   = useSupabase ? [] : JSON.parse(localStorage.getItem('rmu_extra_profs')   || '[]');
-  const extraRv = useSupabase ? {} : JSON.parse(localStorage.getItem('rmu_extra_reviews') || '{}');
 
-  S.professors = SEED_PROFESSORS.map(p => {
-    const reviews = useSupabase ? [] : [...p.reviews, ...(extraRv[p.id] || [])];
-    return { ...p, reviews, reviewCount: reviews.length, badges: computeBadges({...p,reviews:reviews}) };
-  });
+  // Professor data comes ONLY from data.js.
+  // Reviews/statistics are NEVER loaded from data.js.
+  S.professors = SEED_PROFESSORS.map(p => ({
+    ...p,
 
-  if (!useSupabase) {
-    extra.forEach(p => S.professors.push(p));
-  }
+    // Genuine reviews only
+    reviews: [],
 
-  S.recentlyViewed = JSON.parse(localStorage.getItem('rmu_recent') || '[]');
+    // Statistics are calculated by recalc()
+    overall: 0,
+    difficulty: 0,
+    organization: 0,
+    inspiration: 0,
+    reviewCount: 0,
+    badges: [],
+    lastReviewed: null,
+
+    // Semester statistics are calculated from genuine reviews
+    semRatings: [
+      { s: '1ο', r: 0 },
+      { s: '2ο', r: 0 },
+      { s: '3ο', r: 0 },
+      { s: '4ο', r: 0 },
+      { s: '5ο', r: 0 },
+      { s: '6ο', r: 0 }
+    ]
+  }));
+
+  // Recalculate every professor immediately.
+  // With no Supabase reviews, everyone will remain at 0.
+  S.professors.forEach(recalc);
+
+  S.recentlyViewed = JSON.parse(
+    localStorage.getItem('rmu_recent') || '[]'
+  );
+
   S.filtered = [...S.professors];
+
   const t = localStorage.getItem('rmu_theme') || 'light';
   document.documentElement.setAttribute('data-theme', t);
 
+  // Supabase is the ONLY source of genuine reviews.
   if (useSupabase) {
     await syncSupabaseReviews();
   }
@@ -1171,21 +1272,62 @@ async function submitReview(){
     return false;
   }
 
-  const remote = appSupabase ? await persistReviewToSupabase(rev, prof) : null;
-  if (remote) {
-    rev.id = remote.id;
-    rev.fromSupabase = true;
-    rev.professorId = prof.id;
-  }
-  prof.reviews.unshift(rev);
-  recalc(prof);
-  if (!appSupabase) {
-    const er=JSON.parse(localStorage.getItem('rmu_extra_reviews')||'{}');
-    if(!er[prof.id]) er[prof.id]=[];
-    er[prof.id].unshift(rev);
-    localStorage.setItem('rmu_extra_reviews',JSON.stringify(er));
+  const remote = await persistReviewToSupabase(rev, prof);
+
+  if (!remote) {
+    toast(
+      'Η κριτική δεν αποθηκεύτηκε. Δοκίμασε ξανά.',
+      'err'
+    );
+    return false;
   }
 
+  // Only the Supabase version is accepted as genuine.
+  const savedReview = {
+    id: remote.id,
+    uid: remote.user_id
+      ? `sb:${remote.user_id}`
+      : (remote.username || S.user?.username || 'anon'),
+
+    author: remote.username || S.user?.username || 'Ανώνυμος Φοιτητής',
+
+    date: remote.created_at
+      ? remote.created_at.slice(0, 10)
+      : new Date().toISOString().slice(0, 10),
+
+    rating: Number(remote.rating),
+
+    difficulty: Number.isFinite(Number(remote.difficulty))
+      ? Number(remote.difficulty)
+      : null,
+
+    organization: Number.isFinite(Number(remote.organization))
+      ? Number(remote.organization)
+      : null,
+
+    inspiration: Number.isFinite(Number(remote.inspiration))
+      ? Number(remote.inspiration)
+      : null,
+
+    course: remote.course || '',
+    sem: remote.semester || '',
+    text: remote.review_text || '',
+
+    chips: Array.isArray(remote.chips)
+      ? remote.chips
+      : [],
+
+    passed: remote.passed ?? null,
+
+    helpfulUp: Number(remote.helpful_up) || 0,
+    helpfulDown: Number(remote.helpful_down) || 0,
+
+    fromSupabase: true,
+    professorId: prof.id
+  };
+
+  prof.reviews.unshift(savedReview);
+  recalc(prof);
   applyFilters(); renderPOTM(); renderTrending();
   closeModal(); toast('✅ Η κριτική καταχωρήθηκε!','ok');
   ['rv-name','rv-profId','rv-dept','rv-course','rv-text'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
@@ -1195,11 +1337,116 @@ async function submitReview(){
   return true;
 }
 
-function recalc(p){
-  p.overall=avg(p.reviews.map(r=>r.rating));
-  p.reviewCount=p.reviews.length;
-  p.lastReviewed=p.reviews[0]?.date || new Date().toISOString().slice(0,10);
-  p.badges=computeBadges(p);
+function recalc(p) {
+  const reviews = Array.isArray(p.reviews)
+    ? p.reviews.filter(r =>
+        r &&
+        r.fromSupabase === true &&
+        Number.isFinite(Number(r.rating)) &&
+        Number(r.rating) >= 1 &&
+        Number(r.rating) <= 5
+      )
+    : [];
+
+  // Make sure only genuine Supabase reviews remain.
+  p.reviews = reviews;
+
+  // No genuine reviews = completely clean profile.
+  if (!reviews.length) {
+    p.overall = 0;
+    p.difficulty = 0;
+    p.organization = 0;
+    p.inspiration = 0;
+    p.reviewCount = 0;
+    p.lastReviewed = null;
+    p.badges = [];
+
+    p.semRatings = [
+      { s: '1ο', r: 0 },
+      { s: '2ο', r: 0 },
+      { s: '3ο', r: 0 },
+      { s: '4ο', r: 0 },
+      { s: '5ο', r: 0 },
+      { s: '6ο', r: 0 }
+    ];
+
+    return;
+  }
+
+  // ─────────────────────────────
+  // Overall rating
+  // ─────────────────────────────
+
+  p.overall = avg(
+    reviews.map(r => Number(r.rating))
+  );
+
+  // ─────────────────────────────
+  // Review count
+  // ─────────────────────────────
+
+  p.reviewCount = reviews.length;
+
+  // ─────────────────────────────
+  // Secondary ratings
+  // ─────────────────────────────
+
+  const difficultyRatings = reviews
+    .map(r => Number(r.difficulty))
+    .filter(Number.isFinite);
+
+  const organizationRatings = reviews
+    .map(r => Number(r.organization))
+    .filter(Number.isFinite);
+
+  const inspirationRatings = reviews
+    .map(r => Number(r.inspiration))
+    .filter(Number.isFinite);
+
+  p.difficulty = difficultyRatings.length
+    ? avg(difficultyRatings)
+    : 0;
+
+  p.organization = organizationRatings.length
+    ? avg(organizationRatings)
+    : 0;
+
+  p.inspiration = inspirationRatings.length
+    ? avg(inspirationRatings)
+    : 0;
+
+  // ─────────────────────────────
+  // Last genuine review
+  // ─────────────────────────────
+
+  const sorted = [...reviews].sort(
+    (a, b) => new Date(b.date) - new Date(a.date)
+  );
+
+  p.lastReviewed = sorted[0]?.date || null;
+
+  // ─────────────────────────────
+  // Semester ratings
+  // ─────────────────────────────
+
+  p.semRatings = [1, 2, 3, 4, 5, 6].map(semester => {
+    const semesterReviews = reviews.filter(
+      r => Number(r.sem) === semester
+    );
+
+    return {
+      s: `${semester}ο`,
+      r: semesterReviews.length
+        ? avg(semesterReviews.map(r => Number(r.rating)))
+        : 0
+    };
+  });
+
+  // ─────────────────────────────
+  // Badges
+  // ─────────────────────────────
+
+  p.badges = computeBadges(p);
 }
 
 function handleReviewSearch(val){
@@ -1243,12 +1490,34 @@ function isReviewMine(r){
   return r.uid === S.user.sbId || r.uid === S.user.username || r.uid === `sb:${S.user.sbId}` || r.uid === `sb:${S.user.username}`;
 }
 
-function computeBadges(p){
-  const b=[];
-  if(p.difficulty<=3.0) b.push('easy');
-  if(p.inspiration>=4.3) b.push('inspiring');
-  if(p.organization>=4.3) b.push('organized');
-  if(p.overall>=4.5&&p.reviewCount>=20) b.push('top');
+function computeBadges(p) {
+  const b = [];
+
+  // Absolutely no badges without genuine reviews.
+  if (!p.reviewCount || p.reviewCount < 5) {
+    return b;
+  }
+
+  // Easy: at least 5 genuine reviews
+  if (p.difficulty > 0 && p.difficulty <= 3.0) {
+    b.push('easy');
+  }
+
+  // Inspiring: at least 5 genuine reviews
+  if (p.inspiration >= 4.3) {
+    b.push('inspiring');
+  }
+
+  // Organized: at least 5 genuine reviews
+  if (p.organization >= 4.3) {
+    b.push('organized');
+  }
+
+  // Top Rated: require a larger sample
+  if (p.overall >= 4.5 && p.reviewCount >= 20) {
+    b.push('top');
+  }
+
   return b;
 }
 
